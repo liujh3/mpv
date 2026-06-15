@@ -48,21 +48,6 @@ jobs:
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_DIR: "${{ github.workspace }}\\.ccache"
       CCACHE_MAXSIZE: 500M
-      # 🛠️ 官方最高级别的功能阉割参数
-      # 彻底关掉：SMTC、OSC、Lua、JS、Libass(无字幕)、Rubberband、打包解析(libarchive)
-      MESON_ARGS: >-
-        -Dwin32-smtc=disabled
-        -Dosc=disabled
-        -Dlua=disabled
-        -Djavascript=disabled
-        -Dhtml5-javascript=disabled
-        -Dlibass=disabled
-        -Duchardet=disabled
-        -Drubberband=disabled
-        -Dlibarchive=disabled
-        -Dvector-ext=disabled
-        -Dmanpage-build=disabled
-        -Ddoc=disabled
     strategy:
       fail-fast: false
       matrix:
@@ -99,7 +84,9 @@ jobs:
       - name: Update Meson WrapDB
         run: |
           meson wrap update-db
-          # 由于我们禁用了 libass，不再需要编译 harfbuzz 和 expat 字体/文本支持库，大幅精简依赖
+          # Explicitly download wraps, as nested projects may have older versions of them.
+          meson wrap install expat
+          meson wrap install harfbuzz
           meson wrap install libpng
           meson wrap install zlib
 
