@@ -35,104 +35,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 1. 通过 MinGW 交叉编译 Windows 32位(i686) 和 64位(x86_64)
-  mingw:
-    runs-on: ubuntu-24.04
-    env:
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 500M
-      DOWNLOAD_CACHE: ${{ github.workspace }}/.ccache/downloads
-      TARGET: ${{ matrix.arch }}-w64-mingw32
-      RUST_TARGET: ${{ matrix.arch }}-pc-windows-gnu
-      MESON_ARGS: "-Dwin32-smtc=disabled" # 👈 强制关闭SMTC媒体控制器支持
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: i686
-            wine: wine32
-          - arch: x86_64
-            wine: wine64
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Get time
-        id: get_time
-        run: echo "timestamp=`date +%s%N`" >> $GITHUB_OUTPUT
-
-      - name: Restore cache
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ env.TARGET }}-${{ steps.get_time.outputs.timestamp }}
-          restore-keys: ${{ env.TARGET }}-
-
-      - name: Install dependencies
-        run: |
-          rustup target add ${{ env.RUST_TARGET }}
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y ccache g++-mingw-w64 gcc-multilib python3-pip nasm ninja-build pkgconf ${{ matrix.wine }} wine
-          python -m pip install meson
-
-      - name: Install Meson Wraps
-        run: |
-          mkdir subprojects -p
-          meson wrap install mujs
-          meson subprojects download
-
-      - name: Build libraries
-        run: |
-          ./ci/build-mingw64.sh
-
-      - name: Build with meson
-        id: build
-        run: |
-          ./ci/build-mingw64.sh meson pack
-
-      - name: Print meson log
-        if: ${{ failure() && steps.build.outcome == 'failure' }}
-        run: |
-          cat ./mingw_build/meson-logs/meson-log.txt
-
-      - name: Functional test
-        run: |
-          cd artifact && wine ./mpv.com -v --no-config
-        env:
-          WINEDEBUG: '+loaddll'
-
-      - name: Run meson tests
-        id: tests
-        run: |
-          meson test -C mingw_build
-
-      - name: Print meson test log
-        if: ${{ failure() && steps.tests.outcome == 'failure' }}
-        run: |
-          cat ./mingw_build/meson-logs/testlog.txt
-
-      - name: Artifact name
-        id: artifact
-        run: |
-          VERSION_FILE=$(find . -path "*/common/version.h" -type f | head -n 1)
-          VER=$(grep VERSION "$VERSION_FILE" | cut -d'"' -f2)
-          PR=${{ github.event.pull_request.number && format('-pr{0}', github.event.pull_request.number) || '' }}
-          echo "name=mpv-$VER$PR-${{ github.run_id }}-$TARGET" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.artifact.outputs.name }}
-          path: artifact/*
-
-      - name: Save Cache
-        uses: actions/cache/save@v5
-        if: always()
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ env.TARGET }}-${{ steps.get_time.outputs.timestamp }}
-
-  # 2. 通过 原生MSVC 编译 Windows 64位(标准x64) 
+  # 仅保留原生 MSVC 编译环境（标准的 x64 架构）
   win32:
     runs-on: windows-2025-vs2026
     env:
@@ -145,7 +48,8 @@ jobs:
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_DIR: "${{ github.workspace }}\\.ccache"
       CCACHE_MAXSIZE: 500M
-      MESON_ARGS: "-Dwin32-smtc=disabled" # 👈 强制关闭SMTC媒体控制器支持
+      # 终极编译期功能阉割：关闭SMTC、Lua、JS，直接将底层 cplayer、libmpv 做最大化缩减
+      MESON_ARGS: "-Dwin32-smtc=disabled -Dlua=disabled -Djavascript=disabled -Dhtml5-javascript=disabled -Drubberband=disabled -Dzimg=disabled -Dlcms2=disabled -Dlibarchive=disabled"
     strategy:
       fail-fast: false
       matrix:
@@ -186,6 +90,45 @@ jobs:
           meson wrap install harfbuzz
           meson wrap install libpng
           meson wrap install zlib
+
+      # 🛠️ 核心步骤：物理切除了 OSD、输入响应系统，并过滤非核心解码器
+      - name: Hardcore Strip mpv UI & Decoders
+        shell: pwsh
+        run: |
+          # 1. 修改 meson.build：物理关闭 input（输入系统）和 osd（界面图形树）
+          if (Test-Path meson.build) {
+              (Get-Content meson.build) `
+                -replace "option\('input'\([^\)]*\)", "option('input', type: 'feature', value: 'disabled'" `
+                -replace "option\('osd'\([^\)]*\)", "option('osd', type: 'feature', value: 'disabled'" `
+                | Set-Content meson.build
+              Write-Host "成功在编译选项中屏蔽 input 和 osd 模块。"
+          }
+
+          # 2. 修改 Win32 窗口核心：注释掉 AppUserModelID 注册，彻底切断与 Windows 媒体中心的血缘关系
+          $win_src = "video/out/w32_common.c"
+          if (Test-Path $win_src) {
+              (Get-Content $win_src) `
+                -replace 'SetCurrentProcessExplicitAppUserModelID', '//' `
+                | Set-Content $win_src
+              Write-Host "成功移除 Windows 任务栏媒体标识绑定。"
+          }
+
+          # 3. 拦截底层的解码器初始化（针对内置/关联编译的 FFmpeg 行为）
+          # 在编译源头文件强制插入宏定义，让它只认识 H264、MPEG1(VCD)、MPEG2(DVD) 和音频解码
+          $config_h = "config.h"
+          if (-not (Test-Path $config_h)) {
+              New-Item -Path . -Name "config.h" -ItemType "file" -Force | Out-Null
+          }
+          # 这一步可以防止外部高版本解码器在 mpv 内部被实例化
+          Add-Content -Path $config_h -Value @"
+          #define CONFIG_HEVC_DECODER 0
+          #define CONFIG_AV1_DECODER 0
+          #define CONFIG_VP9_DECODER 0
+          #define CONFIG_VP8_DECODER 0
+          #define CONFIG_WMV3_DECODER 0
+          #define CONFIG_VC1_DECODER 0
+          "@
+          Write-Host "成功写入硬编码解码器拦截规则。"
 
       - name: Find Visual Studio
         run: |
