@@ -194,7 +194,7 @@ meson setup build `
     -Dffmpeg:libdav1d=disabled `
     -Dffmpeg:libjxl=disabled `
     -Dffmpeg:libaom=disabled `
-    -Dharfbuzz=disabled `
+    -Dharfbuzz:freetype=disabled `
     -Dlcms2:fastfloat=true `
     -Dlcms2:jpeg=disabled `
     -Dlcms2:tiff=disabled `
