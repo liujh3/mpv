@@ -48,8 +48,21 @@ jobs:
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_DIR: "${{ github.workspace }}\\.ccache"
       CCACHE_MAXSIZE: 500M
-      # 终极编译期功能阉割：关闭SMTC、Lua、JS，直接将底层 cplayer、libmpv 做最大化缩减
-      MESON_ARGS: "-Dwin32-smtc=disabled -Dlua=disabled -Djavascript=disabled -Dhtml5-javascript=disabled -Drubberband=disabled -Dzimg=disabled -Dlcms2=disabled -Dlibarchive=disabled"
+      # 🛠️ 官方最高级别的功能阉割参数
+      # 彻底关掉：SMTC、OSC、Lua、JS、Libass(无字幕)、Rubberband、打包解析(libarchive)
+      MESON_ARGS: >-
+        -Dwin32-smtc=disabled
+        -Dosc=disabled
+        -Dlua=disabled
+        -Djavascript=disabled
+        -Dhtml5-javascript=disabled
+        -Dlibass=disabled
+        -Duchardet=disabled
+        -Drubberband=disabled
+        -Dlibarchive=disabled
+        -Dvector-ext=disabled
+        -Dmanpage-build=disabled
+        -Ddoc=disabled
     strategy:
       fail-fast: false
       matrix:
@@ -86,49 +99,21 @@ jobs:
       - name: Update Meson WrapDB
         run: |
           meson wrap update-db
-          meson wrap install expat
-          meson wrap install harfbuzz
+          # 由于我们禁用了 libass，不再需要编译 harfbuzz 和 expat 字体/文本支持库，大幅精简依赖
           meson wrap install libpng
           meson wrap install zlib
 
-      # 🛠️ 核心步骤：物理切除了 OSD、输入响应系统，并过滤非核心解码器
-      - name: Hardcore Strip mpv UI & Decoders
+      # 抹除 Windows 任务栏的特殊行为
+      - name: Clean Windows Taskbar Integration
         shell: pwsh
         run: |
-          # 1. 修改 meson.build：物理关闭 input（输入系统）和 osd（界面图形树）
-          if (Test-Path meson.build) {
-              (Get-Content meson.build) `
-                -replace "option\('input'\([^\)]*\)", "option('input', type: 'feature', value: 'disabled'" `
-                -replace "option\('osd'\([^\)]*\)", "option('osd', type: 'feature', value: 'disabled'" `
-                | Set-Content meson.build
-              Write-Host "成功在编译选项中屏蔽 input 和 osd 模块。"
-          }
-
-          # 2. 修改 Win32 窗口核心：注释掉 AppUserModelID 注册，彻底切断与 Windows 媒体中心的血缘关系
           $win_src = "video/out/w32_common.c"
           if (Test-Path $win_src) {
               (Get-Content $win_src) `
                 -replace 'SetCurrentProcessExplicitAppUserModelID', '//' `
                 | Set-Content $win_src
-              Write-Host "成功移除 Windows 任务栏媒体标识绑定。"
+              Write-Host "成功移除 Windows 任务栏媒体属性绑定。"
           }
-
-          # 3. 拦截底层的解码器初始化（针对内置/关联编译的 FFmpeg 行为）
-          # 在编译源头文件强制插入宏定义，让它只认识 H264、MPEG1(VCD)、MPEG2(DVD) 和音频解码
-          $config_h = "config.h"
-          if (-not (Test-Path $config_h)) {
-              New-Item -Path . -Name "config.h" -ItemType "file" -Force | Out-Null
-          }
-          # 这一步可以防止外部高版本解码器在 mpv 内部被实例化
-          Add-Content -Path $config_h -Value @"
-          #define CONFIG_HEVC_DECODER 0
-          #define CONFIG_AV1_DECODER 0
-          #define CONFIG_VP9_DECODER 0
-          #define CONFIG_VP8_DECODER 0
-          #define CONFIG_WMV3_DECODER 0
-          #define CONFIG_VC1_DECODER 0
-          "@
-          Write-Host "成功写入硬编码解码器拦截规则。"
 
       - name: Find Visual Studio
         run: |
