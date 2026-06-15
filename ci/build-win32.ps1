@@ -143,6 +143,11 @@ $projects = @(
         )
     },
     @{
+        Path = "$subprojects/libass.wrap"
+        URL = "https://github.com/libass/libass"
+        Revision = "master"
+    },
+    @{
         Path = "$subprojects/libplacebo.wrap"
         URL = "https://code.videolan.org/videolan/libplacebo.git"
         Revision = "master"
