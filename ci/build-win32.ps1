@@ -214,7 +214,6 @@ meson setup build `
     -Dwin32-smtc=disabled `
     -Dlua=disabled `
     -Djavascript=disabled `
-    -Dhtml5-javascript=disabled `
     -Dlibass=disabled `
     -Duchardet=disabled `
     -Drubberband=disabled `
