@@ -132,103 +132,6 @@ vulkan_dep = vulkan_proj.dependency('vulkan')
 meson.override_dependency('vulkan', vulkan_dep)
 "@
 
-# Manually wrap libjxl for CMAKE_MSVC_RUNTIME_LIBRARY option
-if (-not (Test-Path "$subprojects/libjxl")) {
-    New-Item -Path "$subprojects/libjxl" -ItemType Directory | Out-Null
-}
-Set-Content -Path "$subprojects/libjxl/meson.build" -Value @"
-project('libjxl', 'cpp', version: '0.12.0')
-cmake = import('cmake')
-opts = cmake.subproject_options()
-opts.add_cmake_defines({
-    'CMAKE_MSVC_RUNTIME_LIBRARY': 'MultiThreaded',
-    'BUILD_SHARED_LIBS': 'OFF',
-    'BUILD_TESTING': 'OFF',
-})
-libjxl_proj = cmake.subproject('libjxl-cmake', options: opts)
-libjxl_dep = declare_dependency(dependencies: [
-    libjxl_proj.dependency('jxl'),
-    libjxl_proj.dependency('jxl_base'),
-    libjxl_proj.dependency('jxl_cms'),
-    libjxl_proj.dependency('hwy'),
-    libjxl_proj.dependency('brotlicommon'),
-    libjxl_proj.dependency('brotlidec'),
-    libjxl_proj.dependency('brotlienc'),
-])
-meson.override_dependency('libjxl', libjxl_dep)
-libjxl_threads_dep = libjxl_proj.dependency('jxl_threads')
-meson.override_dependency('libjxl_threads', libjxl_threads_dep)
-"@
-
-if (-not (Test-Path "$subprojects/aom")) {
-    New-Item -Path "$subprojects/aom" -ItemType Directory | Out-Null
-}
-Set-Content -Path "$subprojects/aom/meson.build" -Value @"
-project('aom', 'cpp', version: '3.13.1')
-cmake = import('cmake')
-opts = cmake.subproject_options()
-opts.add_cmake_defines({
-    'CMAKE_MSVC_RUNTIME_LIBRARY': 'MultiThreaded',
-    'BUILD_SHARED_LIBS': 'OFF',
-    'BUILD_TESTING': 'OFF',
-})
-aom_proj = cmake.subproject('aom-cmake', options: opts)
-aom_dep = aom_proj.dependency('aom')
-meson.override_dependency('aom', aom_dep)
-"@
-
-if (-not (Test-Path "$subprojects/subrandr")) {
-    git clone https://github.com/afishhh/subrandr --depth 1 $subprojects/subrandr
-    Set-Content -Path "$subprojects/subrandr/meson.build" -Value @"
-project('subrandr', 'c', version: '1.1.0')
-cargo = find_program('cargo', required: true)
-cc = meson.get_compiler('c')
-subrandr_build = custom_target(
-  'subrandr-build',
-  output: 'subrandr.stamp',
-  command: [
-    cargo,
-    '-Z', 'unstable-options',
-    '-C', '@CURRENT_SOURCE_DIR@',
-    'xtask', 'install',
-    '--prefix=' + meson.current_build_dir(),
-    '--static-library', 'true',
-    '--shared-library', 'false'
-  ],
-  console: true
-)
-python = find_program('python3')
-subrandr_lib = custom_target(
-  'subrandr-copy',
-  input: subrandr_build,
-  output: 'subrandr.lib',
-  command: [
-    python,
-    '-c',
-    'import shutil; import sys; shutil.copy2(sys.argv[1], sys.argv[2])',
-    meson.current_build_dir() / 'lib' / 'subrandr.lib', '@OUTPUT@'
-  ]
-)
-harfbuzz = dependency('harfbuzz', default_options: ['freetype=enabled'])
-dep = declare_dependency(
-  sources: subrandr_build,
-  link_with: subrandr_lib,
-  dependencies: [
-    harfbuzz,
-    # those deps are hardcoded, because parsing rustc native-static-libs, would
-    # be lots of code for little benefit, those libs won't really change.
-    cc.find_library('dbghelp', required: true),
-    cc.find_library('kernel32', required: true),
-    cc.find_library('ntdll', required: true),
-    cc.find_library('userenv', required: true),
-    cc.find_library('ws2_32', required: true)
-  ],
-  compile_args: ['-I' + meson.current_build_dir() / 'include'],
-)
-meson.override_dependency('subrandr', dep)
-"@
-}
-
 $projects = @(
     @{
         Path = "$subprojects/ffmpeg.wrap"
@@ -240,22 +143,9 @@ $projects = @(
         )
     },
     @{
-        Path = "$subprojects/libass.wrap"
-        URL = "https://github.com/libass/libass"
-        Revision = "master"
-    },
-    @{
         Path = "$subprojects/libplacebo.wrap"
         URL = "https://code.videolan.org/videolan/libplacebo.git"
         Revision = "master"
-    },
-    @{
-        Path = "$subprojects/dav1d.wrap"
-        URL = "https://code.videolan.org/videolan/dav1d"
-        Revision = "master"
-        Provides = @(
-            "dav1d = dav1d_dep"
-        )
     },
     @{
         Path = "$subprojects/spirv-cross.wrap"
@@ -268,16 +158,6 @@ $projects = @(
         URL = "https://github.com/KhronosGroup/Vulkan-Loader"
         Revision = "main"
         Method = "cmake"
-    },
-    @{
-        Path = "$subprojects/libjxl-cmake.wrap"
-        URL = "https://github.com/libjxl/libjxl"
-        Revision = "main"
-    },
-    @{
-        Path = "$subprojects/aom-cmake.wrap"
-        URL = "https://aomedia.googlesource.com/aom"
-        Revision = "main"
     }
 )
 
@@ -304,46 +184,49 @@ meson setup build `
     -Ddefault_library=static `
     -Dc_args="-I$amfExtractPath" `
     -Dlibmpv=false `
-    -Dtests=true `
+    -Dtests=false `
     -Dgpl=true `
     -Dffmpeg:gpl=enabled `
-    -Dffmpeg:tests=enabled `
+    -Dffmpeg:tests=disabled `
     -Dffmpeg:programs=enabled `
     -Dffmpeg:sdl2=disabled `
     -Dffmpeg:vulkan=auto `
-    -Dffmpeg:libdav1d=enabled `
-    -Dffmpeg:libjxl=enabled `
-    -Dffmpeg:libaom=enabled `
-    -Dharfbuzz:freetype=enabled `
+    -Dffmpeg:libdav1d=disabled `
+    -Dffmpeg:libjxl=disabled `
+    -Dffmpeg:libaom=disabled `
+    -Dharfbuzz=disabled `
     -Dlcms2:fastfloat=true `
     -Dlcms2:jpeg=disabled `
     -Dlcms2:tiff=disabled `
-    -Dlibass:test=enabled `
-    -Dlibjpeg-turbo:tests=disabled `
-    -Dlibusb:tests=false `
-    -Dlibusb:examples=false `
     -Dlibplacebo:demos=false `
     -Dlibplacebo:lcms=enabled `
     -Dlibplacebo:shaderc=enabled `
     -Dlibplacebo:tests=false `
     -Dlibplacebo:vulkan=enabled `
     -Dlibplacebo:d3d11=enabled `
-    -Dlibpsl:tests=false `
     -Dxxhash:inline-all=true `
     -Dxxhash:cli=false `
     -Dluajit:amalgam=true `
     -Damf=enabled `
     -Dd3d11=enabled `
-    -Dsubrandr=enabled `
+    -Dsubrandr=disabled `
     -Dvulkan=enabled `
-    -Djavascript=enabled `
-    -Dwin32-smtc=enabled `
-    -Dlua=luajit `
-    -Ddrm=disabled `
-    -Dlibarchive=disabled `
+    -Dwin32-smtc=disabled `
+    -Dosc=disabled `
+    -Dlua=disabled `
+    -Djavascript=disabled `
+    -Dhtml5-javascript=disabled `
+    -Dlibass=disabled `
+    -Duchardet=disabled `
     -Drubberband=disabled `
+    -Dlibarchive=disabled `
+    -Dvector-ext=disabled `
+    -Dmanpage-build=disabled `
+    -Ddoc=disabled `
+    -Ddrm=disabled `
     -Dwayland=disabled `
     -Dx11=disabled
+
 ninja -C build mpv.exe mpv.com
 cp ./build/subprojects/vulkan-loader/vulkan.dll ./build/vulkan-1.dll
 cp ./etc/mpv-*.bat ./build
