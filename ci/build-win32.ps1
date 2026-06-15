@@ -212,7 +212,6 @@ meson setup build `
     -Dsubrandr=disabled `
     -Dvulkan=enabled `
     -Dwin32-smtc=disabled `
-    -Dosc=disabled `
     -Dlua=disabled `
     -Djavascript=disabled `
     -Dhtml5-javascript=disabled `
