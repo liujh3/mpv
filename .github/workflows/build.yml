@@ -102,6 +102,27 @@ jobs:
               Write-Host "成功移除 Windows 任务栏媒体属性绑定。"
           }
 
+      # ================= 插入这一步 =================
+      - name: Commit Patches & Inject Custom Git Tag
+        shell: pwsh
+        run: |
+          # 0. 强制将 PowerShell 本次会话的输出和标准字符串编码设为 UTF-8
+          $OutputEncoding = [System.Text.Encoding]::UTF8
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+          # 1. 配置临时 Git 身份（不配置无法 commit）
+          git config --global user.email "bot@github.com"
+          git config --global user.name "Workflow-Bot"
+          
+          # 2. 把修改过的 w32_common.c 本地提交，让仓库重回 "Clean" 状态（消灭 -dirty）
+          git commit -am "Apply customized strip patches"
+          
+          # 3. 强行打上你想要的专属版本标签（消灭 7位哈希，直接用这个名字代替）
+          git tag -f "LiveWallpaper定制版"
+          
+          Write-Host "Git 专属标签注入成功！"
+      # ==============================================
+
       - name: Find Visual Studio
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
