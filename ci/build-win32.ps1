@@ -218,7 +218,6 @@ meson setup build `
     -Drubberband=disabled `
     -Dlibarchive=disabled `
     -Dmanpage-build=disabled `
-    -Ddoc=disabled `
     -Ddrm=disabled `
     -Dwayland=disabled `
     -Dx11=disabled
