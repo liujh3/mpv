@@ -217,7 +217,6 @@ meson setup build `
     -Duchardet=disabled `
     -Drubberband=disabled `
     -Dlibarchive=disabled `
-    -Dvector-ext=disabled `
     -Dmanpage-build=disabled `
     -Ddoc=disabled `
     -Ddrm=disabled `
